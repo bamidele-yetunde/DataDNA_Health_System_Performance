@@ -1,0 +1,307 @@
+// DAX measures for the DataDNA November 2026 challenge: Health System Performance
+// Model: fact_health_performance and fact_workforce link to dim_country, dim_date and dim_health_system (star schema)
+// Every metric is a rate, share, amount per person or index, so every measure uses AVERAGE and never SUM.
+// The text values "Pre-Pandemic" and "Post-Pandemic" below are the phase names exactly as they appear in the raw data.
+
+Avg ICU Occupancy % =
+    AVERAGE ( fact_health_performance[icu_occupancy_pct] )
+    // format: 0.0
+
+Avg ED 4 Hour % =
+    AVERAGE ( fact_health_performance[ed_4hr_pct] )
+    // format: 0.0
+
+Avg Elective Wait (weeks) =
+    AVERAGE ( fact_health_performance[elective_wait_weeks] )
+    // format: 0.0
+
+Avg Respiratory Illness % =
+    AVERAGE ( fact_health_performance[respiratory_illness_pct] )
+    // format: 0.00
+
+Avg Excess Mortality per 100k =
+    AVERAGE ( fact_health_performance[excess_mortality_per_100k] )
+    // format: 0.0
+
+Avg Health Spend per Person (USD) =
+    AVERAGE ( fact_health_performance[health_spend_per_capita_usd] )
+    // format: #,0
+
+Avg CVD Prevalence % =
+    AVERAGE ( fact_health_performance[cardiovascular_prevalence_pct] )
+    // format: 0.00
+
+Avg Diabetes Prevalence % =
+    AVERAGE ( fact_health_performance[diabetes_prevalence_pct] )
+    // format: 0.00
+
+Avg Cancer Incidence per 100k =
+    AVERAGE ( fact_health_performance[cancer_incidence_per_100k] )
+    // format: 0.0
+
+Avg Vacancy Rate % =
+    AVERAGE ( fact_workforce[vacancy_rate_pct] )
+    // format: 0.0
+
+Avg Burnout Index =
+    AVERAGE ( fact_workforce[burnout_index] )
+    // format: 0.0
+
+Region Quarters =
+    COUNTROWS ( fact_health_performance )
+    // format: #,0
+
+Region Years Surveyed =
+    COUNTROWS ( fact_workforce )
+    // format: #,0
+
+ICU Before Pandemic =
+    CALCULATE ( [Avg ICU Occupancy %], dim_date[pandemic_phase] = "Pre-Pandemic" )
+    // format: 0.0
+
+ICU Acute Pandemic =
+    CALCULATE ( [Avg ICU Occupancy %], dim_date[pandemic_phase] = "Acute Pandemic" )
+    // format: 0.0
+
+ICU Change Acute vs Pre =
+    [ICU Acute Pandemic] - [ICU Before Pandemic]
+    // format: +0.0" pts";0.0" pts lower";0.0" pts"
+
+ED Before Pandemic =
+    CALCULATE ( [Avg ED 4 Hour %], dim_date[pandemic_phase] = "Pre-Pandemic" )
+    // format: 0.0
+
+ED vs Before Pandemic =
+    [Avg ED 4 Hour %] - CALCULATE ( [Avg ED 4 Hour %], REMOVEFILTERS ( dim_date ), dim_date[pandemic_phase] = "Pre-Pandemic" )
+    // format: +0.0" pts";0.0" pts lower";0.0" pts"
+
+ED Worst Phase =
+    VAR t = TOPN ( 1, ALL ( dim_date[pandemic_phase] ), [Avg ED 4 Hour %], ASC ) RETURN MAXX ( t, dim_date[pandemic_phase] )
+
+ED Worst Phase Drop =
+    VAR p = [ED Worst Phase] RETURN CALCULATE ( [ED vs Before Pandemic], dim_date[pandemic_phase] = p )
+    // format: +0.0" pts";0.0" pts";0.0" pts"
+
+ED Lowest Quarter =
+    VAR t = TOPN ( 1, ALL ( dim_date[year_quarter] ), [Avg ED 4 Hour %], ASC ) RETURN MAXX ( t, dim_date[year_quarter] )
+
+ED Lowest Quarter % =
+    MINX ( ALL ( dim_date[year_quarter] ), [Avg ED 4 Hour %] )
+    // format: 0.0
+
+Respiratory Before Pandemic =
+    CALCULATE ( [Avg Respiratory Illness %], dim_date[pandemic_phase] = "Pre-Pandemic" )
+    // format: 0.00
+
+Respiratory Rise in Acute Phase =
+    CALCULATE ( [Avg Respiratory Illness %], dim_date[pandemic_phase] = "Acute Pandemic" ) - [Respiratory Before Pandemic]
+    // format: +0.00" pts";0.00" pts lower";0.00" pts"
+
+Respiratory Post vs Pre =
+    CALCULATE ( [Avg Respiratory Illness %], dim_date[pandemic_phase] = "Post-Pandemic" ) - [Respiratory Before Pandemic]
+    // format: +0.00" pts";0.00" pts";0.00" pts"
+
+Wait 2019 =
+    CALCULATE ( [Avg Elective Wait (weeks)], REMOVEFILTERS ( dim_date ), dim_date[year] = 2019 )
+    // format: 0.0
+
+Wait 2021 =
+    CALCULATE ( [Avg Elective Wait (weeks)], REMOVEFILTERS ( dim_date ), dim_date[year] = 2021 )
+    // format: 0.0
+
+Wait 2024 =
+    CALCULATE ( [Avg Elective Wait (weeks)], REMOVEFILTERS ( dim_date ), dim_date[year] = 2024 )
+    // format: 0.0
+
+Wait Ratio 2021 to 2019 =
+    DIVIDE ( [Wait 2021], [Wait 2019] )
+    // format: 0.00"×"
+
+Wait Ratio 2024 to 2019 =
+    DIVIDE ( [Wait 2024], [Wait 2019] )
+    // format: 0.00"×"
+
+Countries with a Similar Rise =
+    VAR Overall = CALCULATE ( [Wait Ratio 2021 to 2019], REMOVEFILTERS ( dim_country ) ) RETURN COUNTROWS ( FILTER ( VALUES ( dim_country[country_name] ), ABS ( [Wait Ratio 2021 to 2019] - Overall ) <= 0.3 ) )
+    // format: 0
+
+Similar Rise Label =
+    FORMAT ( [Countries with a Similar Rise], "0" ) & " of " & FORMAT ( DISTINCTCOUNT ( dim_country[country_name] ), "0" )
+
+Wait H2 2022 =
+    CALCULATE ( [Avg Elective Wait (weeks)], REMOVEFILTERS ( dim_date ), dim_date[year] = 2022, dim_date[quarter] >= 3 )
+    // format: 0.0
+
+Wait H2 2022 vs 2019 =
+    DIVIDE ( [Wait H2 2022], [Wait 2019] )
+    // format: 0.00"×"
+
+Nordics & Germany H2 2022 vs 2019 =
+    CALCULATE ( [Wait H2 2022 vs 2019], dim_country[country_name] IN { "Sweden", "Norway", "Denmark", "Finland", "Germany" } )
+    // format: 0.00"×"
+
+UK Wait =
+    CALCULATE ( [Avg Elective Wait (weeks)], dim_country[country_name] = "United Kingdom" )
+    // format: 0.0
+
+EU Wait =
+    CALCULATE ( [Avg Elective Wait (weeks)], dim_country[is_eu_member] = TRUE () )
+    // format: 0.0
+
+UK Wait 2019 Level =
+    CALCULATE ( [UK Wait], REMOVEFILTERS ( dim_date ), dim_date[year] = 2019 )
+    // format: 0.0
+
+UK Wait vs UK 2019 =
+    DIVIDE ( [UK Wait], [UK Wait 2019 Level] )
+    // format: 0.00"×"
+
+UK to EU Wait Ratio =
+    DIVIDE ( [UK Wait], [EU Wait] )
+    // format: 0.00"×"
+
+UK Wait 2024 vs UK 2019 =
+    CALCULATE ( [UK Wait vs UK 2019], REMOVEFILTERS ( dim_date ), dim_date[year] = 2024 )
+    // format: 0.00"×"
+
+UK to EU Wait Ratio 2024 =
+    CALCULATE ( [UK to EU Wait Ratio], REMOVEFILTERS ( dim_date ), dim_date[year] = 2024 )
+    // format: 0.00"×"
+
+UK Highlight Colour =
+    IF ( SELECTEDVALUE ( dim_country[country_name] ) = "United Kingdom", "#0B2E59", "#7FA7D9" )
+
+UK Spend per Person =
+    CALCULATE ( [Avg Health Spend per Person (USD)], dim_country[country_name] = "United Kingdom" )
+    // format: #,0
+
+EU Spend per Person =
+    CALCULATE ( [Avg Health Spend per Person (USD)], dim_country[is_eu_member] = TRUE () )
+    // format: #,0
+
+UK to EU Spend Ratio =
+    DIVIDE ( [UK Spend per Person], [EU Spend per Person] )
+    // format: 0.00"×"
+
+UK Spend Gap to EU % =
+    DIVIDE ( [UK Spend per Person] - [EU Spend per Person], [EU Spend per Person] )
+    // format: +0.0%;0.0%;0.0%
+
+Burnout Peak Year =
+    VAR t = TOPN ( 1, ALL ( dim_date[year] ), [Avg Burnout Index], DESC ) RETURN MAXX ( t, dim_date[year] )
+    // format: 0
+
+Burnout Peak Value =
+    MAXX ( ALL ( dim_date[year] ), [Avg Burnout Index] )
+    // format: 0.0
+
+Burnout Rose Every Year to Peak =
+    VAR pk = [Burnout Peak Year] VAR yrs = FILTER ( ALL ( dim_date[year] ), dim_date[year] > 2018 && dim_date[year] <= pk ) VAR falls = FILTER ( yrs, VAR y = dim_date[year] RETURN CALCULATE ( [Avg Burnout Index], dim_date[year] = y ) <= CALCULATE ( [Avg Burnout Index], dim_date[year] = y - 1 ) ) RETURN IF ( COUNTROWS ( falls ) = 0, "Yes", "No" )
+
+Burnout Vacancy Correlation =
+    VAR mb = AVERAGE ( fact_workforce[burnout_index] ) VAR mv = AVERAGE ( fact_workforce[vacancy_rate_pct] ) VAR sxy = SUMX ( fact_workforce, ( fact_workforce[burnout_index] - mb ) * ( fact_workforce[vacancy_rate_pct] - mv ) ) VAR sxx = SUMX ( fact_workforce, ( fact_workforce[burnout_index] - mb ) ^ 2 ) VAR syy = SUMX ( fact_workforce, ( fact_workforce[vacancy_rate_pct] - mv ) ^ 2 ) RETURN DIVIDE ( sxy, SQRT ( sxx * syy ) )
+    // format: 0.00
+
+Vacancy pts per Burnout pt =
+    VAR mb = AVERAGE ( fact_workforce[burnout_index] ) VAR mv = AVERAGE ( fact_workforce[vacancy_rate_pct] ) RETURN DIVIDE ( SUMX ( fact_workforce, ( fact_workforce[burnout_index] - mb ) * ( fact_workforce[vacancy_rate_pct] - mv ) ), SUMX ( fact_workforce, ( fact_workforce[burnout_index] - mb ) ^ 2 ) )
+    // format: 0.00
+
+Burnout Vacancy Correlation within Country =
+    VAR T = ADDCOLUMNS ( fact_workforce, "@b", fact_workforce[burnout_index] - CALCULATE ( AVERAGE ( fact_workforce[burnout_index] ), ALLEXCEPT ( fact_workforce, fact_workforce[country_id] ) ), "@v", fact_workforce[vacancy_rate_pct] - CALCULATE ( AVERAGE ( fact_workforce[vacancy_rate_pct] ), ALLEXCEPT ( fact_workforce, fact_workforce[country_id] ) ) ) RETURN DIVIDE ( SUMX ( T, [@b] * [@v] ), SQRT ( SUMX ( T, [@b] ^ 2 ) * SUMX ( T, [@v] ^ 2 ) ) )
+    // format: 0.00
+
+UK Vacancy Rate =
+    CALCULATE ( [Avg Vacancy Rate %], dim_country[country_name] = "United Kingdom" )
+    // format: 0.0
+
+EU Vacancy Rate =
+    CALCULATE ( [Avg Vacancy Rate %], dim_country[is_eu_member] = TRUE () )
+    // format: 0.0
+
+UK to EU Vacancy Ratio =
+    DIVIDE ( [UK Vacancy Rate], [EU Vacancy Rate] )
+    // format: 0.00"×"
+
+UK Burnout =
+    CALCULATE ( [Avg Burnout Index], dim_country[country_name] = "United Kingdom" )
+    // format: 0.0
+
+Other High Income Burnout =
+    CALCULATE ( [Avg Burnout Index], dim_country[income_group] = "High income", dim_country[country_name] <> "United Kingdom" )
+    // format: 0.0
+
+UK Burnout Change 2022 to 2024 =
+    CALCULATE ( [UK Burnout], REMOVEFILTERS ( dim_date ), dim_date[year] = 2024 ) - CALCULATE ( [UK Burnout], REMOVEFILTERS ( dim_date ), dim_date[year] = 2022 )
+    // format: +0.0" pts";0.0" pts lower";0.0" pts"
+
+Other HI Burnout Change 2022 to 2024 =
+    CALCULATE ( [Other High Income Burnout], REMOVEFILTERS ( dim_date ), dim_date[year] = 2024 ) - CALCULATE ( [Other High Income Burnout], REMOVEFILTERS ( dim_date ), dim_date[year] = 2022 )
+    // format: +0.0" pts";0.0" pts lower";0.0" pts"
+
+CVD Slope pts per Year =
+    VAR Yearly = ADDCOLUMNS ( VALUES ( dim_date[year] ), "@Avg", CALCULATE ( [Avg CVD Prevalence %] ) ) RETURN MAXX ( LINESTX ( FILTER ( Yearly, NOT ISBLANK ( [@Avg] ) ), [@Avg], dim_date[year] ), [Slope1] )
+    // format: +0.000;0.000" lower";0.000
+
+Diabetes Slope pts per Year =
+    VAR Yearly = ADDCOLUMNS ( VALUES ( dim_date[year] ), "@Avg", CALCULATE ( [Avg Diabetes Prevalence %] ) ) RETURN MAXX ( LINESTX ( FILTER ( Yearly, NOT ISBLANK ( [@Avg] ) ), [@Avg], dim_date[year] ), [Slope1] )
+    // format: +0.000;0.000" lower";0.000
+
+Cancer Slope per 100k per Year =
+    VAR Yearly = ADDCOLUMNS ( VALUES ( dim_date[year] ), "@Avg", CALCULATE ( [Avg Cancer Incidence per 100k] ) ) RETURN MAXX ( LINESTX ( FILTER ( Yearly, NOT ISBLANK ( [@Avg] ) ), [@Avg], dim_date[year] ), [Slope1] )
+    // format: +0.00;0.00" lower";0.00
+
+CVD 2018 =
+    CALCULATE ( [Avg CVD Prevalence %], REMOVEFILTERS ( dim_date ), dim_date[year] = 2018 )
+    // format: 0.00
+
+CVD 2024 =
+    CALCULATE ( [Avg CVD Prevalence %], REMOVEFILTERS ( dim_date ), dim_date[year] = 2024 )
+    // format: 0.00
+
+Diabetes 2018 =
+    CALCULATE ( [Avg Diabetes Prevalence %], REMOVEFILTERS ( dim_date ), dim_date[year] = 2018 )
+    // format: 0.00
+
+Diabetes 2024 =
+    CALCULATE ( [Avg Diabetes Prevalence %], REMOVEFILTERS ( dim_date ), dim_date[year] = 2024 )
+    // format: 0.00
+
+Cancer 2018 =
+    CALCULATE ( [Avg Cancer Incidence per 100k], REMOVEFILTERS ( dim_date ), dim_date[year] = 2018 )
+    // format: 0.0
+
+Cancer 2024 =
+    CALCULATE ( [Avg Cancer Incidence per 100k], REMOVEFILTERS ( dim_date ), dim_date[year] = 2024 )
+    // format: 0.0
+
+Cancer Change % per Year =
+    DIVIDE ( [Cancer Slope per 100k per Year], [Cancer 2018] )
+    // format: +0.00%;0.00%" fall";0.00%
+
+Cancer Change % High Income =
+    CALCULATE ( [Cancer Change % per Year], dim_country[income_group] = "High income" )
+    // format: +0.00%;0.00%" fall";0.00%
+
+Cancer Change % Low Income =
+    CALCULATE ( [Cancer Change % per Year], dim_country[income_group] = "Low income" )
+    // format: +0.00%;0.00%" fall";0.00%
+
+Cancer Index 2018 = 100 =
+    DIVIDE ( [Avg Cancer Incidence per 100k], [Cancer 2018] ) * 100
+    // format: 0.0
+
+Wait Ratio 2024 Chart =
+    VAR r = RANKX ( ALL ( dim_country[country_name] ), [Wait Ratio 2024 to 2019] ) RETURN IF ( r <= 20 || SELECTEDVALUE ( dim_country[country_name] ) = "United Kingdom", [Wait Ratio 2024 to 2019] )
+    // format: 0.00"×"
+
+Wait Ratio 2021 Chart =
+    VAR r = RANKX ( ALL ( dim_country[country_name] ), [Wait Ratio 2021 to 2019] ) RETURN IF ( r <= 19 || SELECTEDVALUE ( dim_country[country_name] ) = "United Kingdom", [Wait Ratio 2021 to 2019] )
+    // format: 0.00"×"
+
+ICU Change Chart =
+    VAR r = RANKX ( ALL ( dim_country[country_name] ), [ICU Change Acute vs Pre] ) RETURN IF ( r <= 19 || SELECTEDVALUE ( dim_country[country_name] ) = "United Kingdom", [ICU Change Acute vs Pre] )
+    // format: +0.0" pts";0.0" pts lower";0.0" pts"
+
+// Calculated column on dim_country: readable WHO region names for charts (the raw who_region column is unchanged)
+WHO Region Name =
+    SWITCH ( dim_country[who_region], "African Region", "Africa", "Region of the Americas", "Americas", "Eastern Mediterranean Region", "East Mediterranean", "European Region", "Europe", "South-East Asia Region", "South East Asia", "Western Pacific Region", "Western Pacific", dim_country[who_region] )
